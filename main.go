@@ -10,17 +10,25 @@
 package main
 
 import (
+	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 )
 
 func main() {
-	if len(os.Args) != 2 {
-		fmt.Fprintln(os.Stderr, "usage: fontmetrics <font-file>")
+	asJSON := flag.Bool("json", false, "print metrics as JSON instead of text")
+	flag.Usage = func() {
+		fmt.Fprintln(os.Stderr, "usage: fontmetrics [-json] <font-file>")
+	}
+	flag.Parse()
+
+	if flag.NArg() != 1 {
+		flag.Usage()
 		os.Exit(2)
 	}
 
-	path := os.Args[1]
+	path := flag.Arg(0)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "fontmetrics: %v\n", err)
@@ -33,7 +41,66 @@ func main() {
 		os.Exit(1)
 	}
 
+	if *asJSON {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(newJSONReport(f)); err != nil {
+			fmt.Fprintf(os.Stderr, "fontmetrics: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	printReport(f)
+}
+
+// Raw design units only: consumers can divide by unitsPerEm themselves,
+// and skipping the ratios avoids emitting NaN (which JSON can't encode)
+// for a broken font with unitsPerEm of zero.
+type jsonReport struct {
+	UnitsPerEm uint16       `json:"unitsPerEm"`
+	NumGlyphs  uint16       `json:"numGlyphs"`
+	Hhea       jsonHhea     `json:"hhea"`
+	OS2        *jsonOS2     `json:"os2,omitempty"`
+}
+
+type jsonHhea struct {
+	Ascender  int16 `json:"ascender"`
+	Descender int16 `json:"descender"`
+	LineGap   int16 `json:"lineGap"`
+}
+
+type jsonOS2 struct {
+	TypoAscender  int16   `json:"typoAscender"`
+	TypoDescender int16   `json:"typoDescender"`
+	TypoLineGap   int16   `json:"typoLineGap"`
+	WinAscent     uint16  `json:"winAscent"`
+	WinDescent    uint16  `json:"winDescent"`
+	CapHeight     *int16  `json:"capHeight,omitempty"`
+	XHeight       *int16  `json:"xHeight,omitempty"`
+}
+
+func newJSONReport(f *Font) jsonReport {
+	r := jsonReport{
+		UnitsPerEm: f.UnitsPerEm,
+		NumGlyphs:  f.NumGlyphs,
+		Hhea:       jsonHhea{Ascender: f.Ascent, Descender: f.Descent, LineGap: f.LineGap},
+	}
+	if !f.HasOS2 {
+		return r
+	}
+	r.OS2 = &jsonOS2{
+		TypoAscender:  f.TypoAscender,
+		TypoDescender: f.TypoDescender,
+		TypoLineGap:   f.TypoLineGap,
+		WinAscent:     f.WinAscent,
+		WinDescent:    f.WinDescent,
+	}
+	if f.HasCapHeight {
+		r.OS2.CapHeight = &f.CapHeight
+		r.OS2.XHeight = &f.XHeight
+	}
+	return r
 }
 
 func printReport(f *Font) {

@@ -42,7 +42,14 @@ OS/2 win metrics (used for clipping on Windows; often larger than the others):
   xHeight:   1096  (0.535 em)
 ```
 
-Values are printed both in raw font design units and as a fraction of
+Pass `-json` to get the same numbers as a JSON object (design units
+only, with the `os2` key left out when the font has no OS/2 table):
+
+```
+$ ./fontmetrics -json ./Inter-Regular.ttf
+```
+
+Text values are printed both in raw font design units and as a fraction of
 the em, since the design-unit numbers are meaningless without knowing
 `unitsPerEm`.
 
